@@ -9,6 +9,8 @@ import subprocess
 
 import pysparkling
 
+from . import __version__
+
 LOG = logging.getLogger(__name__)
 
 
@@ -22,16 +24,26 @@ DEFAULT_BACKBONES = [
 ]
 
 
+class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
+                      argparse.RawDescriptionHelpFormatter):
+    pass
+
+
 def cli():
     parser = argparse.ArgumentParser(
+        prog='python3 -m openpifpaf.benchmark',
         description=__doc__,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+        formatter_class=CustomFormatter,
     )
+    parser.add_argument('--version', action='version',
+                        version='OpenPifPaf {version}'.format(version=__version__))
+
     parser.add_argument('--output', default=None,
                         help='output file name')
     parser.add_argument('--backbones', default=DEFAULT_BACKBONES, nargs='+',
                         help='backbones to evaluate')
     parser.add_argument('--iccv2019-ablation', default=False, action='store_true')
+    parser.add_argument('--dense-ablation', default=False, action='store_true')
     group = parser.add_argument_group('logging')
     group.add_argument('--debug', default=False, action='store_true',
                        help='print debug messages')
@@ -99,6 +111,20 @@ def main():
         ]
         for eval_args_i, name_i in zip(multi_eval_args, names):
             run_eval_coco(args.output, args.backbones[0], eval_args_i, output_name=name_i)
+    elif args.dense_ablation:
+        multi_eval_args = [
+            eval_args,
+            eval_args + ['--dense-connections', '--dense-coupling=1.0'],
+            eval_args + ['--dense-connections'],
+        ]
+        for backbone in args.backbones:
+            names = [
+                backbone,
+                '{}.wdense'.format(backbone),
+                '{}.wdense.whierarchy'.format(backbone),
+            ]
+            for eval_args_i, name_i in zip(multi_eval_args, names):
+                run_eval_coco(args.output, backbone, eval_args_i, output_name=name_i)
     else:
         for backbone in args.backbones:
             run_eval_coco(args.output, backbone, eval_args)
@@ -114,6 +140,9 @@ def main():
     LOG.debug('all data: %s', stats)
 
     # pretty printing
+    # pylint: disable=line-too-long
+    print('| Backbone                  | AP       | APM      | APL      | t_{total} [ms]  | t_{dec} [ms] |     size |')
+    print('|--------------------------:|:--------:|:--------:|:--------:|:---------------:|:------------:|---------:|')
     for backbone, data in sorted(stats.items(), key=lambda b_d: b_d[1]['stats'][0]):
         print(
             '| {backbone: <25} '
@@ -121,14 +150,16 @@ def main():
             '| {APM: <8.1f} '
             '| {APL: <8.1f} '
             '| {t: <15.0f} '
-            '| {tdec: <12.0f} |'
-            ''.format(
-                backbone=backbone,
+            '| {tdec: <12.0f} '
+            '| {file_size: >6.1f}MB '
+            '|'.format(
+                backbone='['+backbone+']',
                 AP=100.0 * data['stats'][0],
                 APM=100.0 * data['stats'][3],
                 APL=100.0 * data['stats'][4],
                 t=1000.0 * data['total_time'] / data['n_images'],
                 tdec=1000.0 * data['decoder_time'] / data['n_images'],
+                file_size=data['file_size'] / 1024 / 1024,
             )
         )
 

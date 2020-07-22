@@ -1,6 +1,36 @@
 # History
 
-* [master](https://github.com/vita-epfl/openpifpaf/compare/v0.10.1...master)
+* [master](https://github.com/vita-epfl/openpifpaf/compare/v0.11.7...master)
+* [0.11.7](https://github.com/vita-epfl/openpifpaf/compare/v0.11.6...v0.11.7) (2020-07-14)
+    * fix predict with multiple GPUs
+    * fix ONNX optimization
+    * fix dense connection option and add a test for it
+    * suppress a warning during training that doesn't apply
+* [0.11.6](https://github.com/vita-epfl/openpifpaf/compare/v0.11.4...v0.11.6) (2020-06-15)
+    * circular truncation for CifHr
+    * extend Guide
+* [0.11.4](https://github.com/vita-epfl/openpifpaf/compare/v0.11.3...v0.11.4) (2020-06-02)
+    * init Guide
+    * minor updates
+* [0.11.3](https://github.com/vita-epfl/openpifpaf/compare/v0.11.2...v0.11.3) (2020-06-01)
+    * new debug message for "neural network device" (to check cpu versus gpu usage)
+    * debug output without plots is default; enable debug plots with new `--debug-images`
+* [0.11.2](https://github.com/vita-epfl/openpifpaf/compare/v0.11.0...v0.11.2) (2020-05-29)
+    * pretrained resnet50 model
+    * fix CUDA support in `openpifpaf.video`
+    * add `--version` option to all CLIs
+* [0.11.0](https://github.com/vita-epfl/openpifpaf/compare/v0.10.1...v0.11.0) (2020-05-12)
+    * major refactor
+    * now requires Python>=3.6 for type annotations
+    * new ShuffleNetV2 models: `shufflenetv2k16w` and `shufflenetv2k30w`
+    * 64bit loss and Focal Loss for confidences
+    * fast fused convolutions for `CompositeHeadFused`
+    * new handling of crowd annotations in encoder
+    * new `--extended-scale` training and eval-coco option
+    * decoding with frontier is default
+    * more robust blending of connection candidates
+    * introduced `openpifpaf.visualizer` and many improvements to visualization
+    * [experimental] new `cocodet` dataset interface for detections
 * [0.10.1](https://github.com/vita-epfl/openpifpaf/compare/v0.10.0...v0.10.1) (2019-12-09)
     * faster decoder
     * refactored scale generation between loss and encoder
