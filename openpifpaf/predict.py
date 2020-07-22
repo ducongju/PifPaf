@@ -13,28 +13,28 @@ import torch
 from .network import nets
 from . import datasets, decoder, show, transforms
 
-LOG = logging.getLogger(__name__)
+LOG = logging.getLogger(__name__)  # 创建以模块命名的logger文件
 
 
 def cli():
-    parser = argparse.ArgumentParser(
-        prog='python3 -m openpifpaf.predict',
-        description=__doc__,
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    parser = argparse.ArgumentParser(  # 利用ArgumentParser类创建parser对象
+        prog='python3 -m openpifpaf.predict',  # 程序的名称
+        description=__doc__,  # 输出文件开头注释的内容
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,  # 自动添加默认的值的信息到每一个帮助信息的参数中
     )
-    nets.cli(parser)
-    decoder.cli(parser, force_complete_pose=False, instance_threshold=0.1, seed_threshold=0.5)
+    nets.cli(parser)  # 导入网络配置
+    decoder.cli(parser, force_complete_pose=False, instance_threshold=0.1, seed_threshold=0.5)  # 导入解码配置
     parser.add_argument('images', nargs='*',
                         help='input images')
     parser.add_argument('--glob',
-                        help='glob expression for input images (for many images)')
+                        help='glob expression for input images (for many images)')  # 利用通配符表述选择多张图片
     parser.add_argument('-o', '--output-directory',
                         help=('Output directory. When using this option, make '
                               'sure input images have distinct file names.'))
     parser.add_argument('--show', default=False, action='store_true',
-                        help='show image of output overlay')
+                        help='show image of output overlay')  # 是否在界面展示图片
     parser.add_argument('--output-types', nargs='+', default=['skeleton', 'json'],
-                        help='what to output: skeleton, keypoints, json')
+                        help='what to output: skeleton, keypoints, json')  # 命令行用-，程序中用_
     parser.add_argument('--batch-size', default=1, type=int,
                         help='processing batch size')
     parser.add_argument('--long-edge', default=None, type=int,
@@ -49,7 +49,7 @@ def cli():
                         help='figure width')
     parser.add_argument('--dpi-factor', default=1.0, type=float,
                         help='increase dpi of output image by this factor')
-    group = parser.add_argument_group('logging')
+    group = parser.add_argument_group('logging')  # 将配置放入配置群组
     group.add_argument('-q', '--quiet', default=False, action='store_true',
                        help='only show warning messages or above')
     group.add_argument('--debug', default=False, action='store_true',
@@ -84,7 +84,7 @@ def cli():
     return args
 
 
-def bbox_from_keypoints(kps):
+def bbox_from_keypoints(kps):  # 通过keypoints得到bbox
     m = kps[:, 2] > 0
     if not np.any(m):
         return [0, 0, 0, 0]

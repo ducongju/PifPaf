@@ -3,7 +3,7 @@ import os
 import subprocess
 import sys
 
-import pytest
+import pytest  # Python测试框架
 
 
 PYTHON = 'python3' if sys.platform != 'win32' else 'python'

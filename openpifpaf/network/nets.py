@@ -421,15 +421,15 @@ def cli(parser):
     group.add_argument('--checkpoint', default=None,
                        help=('Load a model from a checkpoint. '
                              'Use "resnet50", "resnet101" '
-                             'or "resnet152" for pretrained OpenPifPaf models.'))
+                             'or "resnet152" for pretrained OpenPifPaf models.'))  # default=resnet50
     group.add_argument('--basenet', default=None,
                        help='base network, e.g. resnet50')
     group.add_argument('--headnets', default=['pif', 'paf'], nargs='+',
                        help='head networks')
     group.add_argument('--no-pretrain', dest='pretrained', default=True, action='store_false',
-                       help='create model without ImageNet pretraining')
+                       help='create model without ImageNet pretraining')  # 无用
     group.add_argument('--two-scale', default=False, action='store_true',
-                       help='[experimental]')
+                       help='[experimental]')  # 无用
     group.add_argument('--multi-scale', default=False, action='store_true',
                        help='[experimental]')
     group.add_argument('--no-multi-scale-hflip',
