@@ -1,27 +1,20 @@
-"""Transform input data.
-
-Images are resized with Pillow which has a different coordinate convention:
-https://pillow.readthedocs.io/en/3.3.x/handbook/concepts.html#coordinate-system
-
-> The Python Imaging Library uses a Cartesian pixel coordinate system,
-  with (0,0) in the upper left corner. Note that the coordinates refer to
-  the implied pixel corners; the centre of a pixel addressed as (0, 0)
-  actually lies at (0.5, 0.5).
-"""
+"""Transform input data."""
 
 import torchvision
 
 from .annotations import AnnotationJitter, NormalizeAnnotations
 from .compose import Compose
 from .crop import Crop
-from .hflip import HFlip, HorizontalSwap
+from .hflip import HFlip
 from .image import Blur, ImageTransform, JpegCompression
+from .minsize import MinSize
 from .multi_scale import MultiScale
-from .pad import CenterPad, SquarePad
+from .pad import CenterPad, CenterPadTight, SquarePad
 from .preprocess import Preprocess
-from .random import RandomApply
+from .random import DeterministicEqualChoice, RandomApply
 from .rotate import RotateBy90
-from .scale import RescaleAbsolute, RescaleRelative
+from .scale import RescaleAbsolute, RescaleRelative, ScaleMix
+from .unclipped import UnclippedArea, UnclippedSides
 
 
 EVAL_TRANSFORM = Compose([

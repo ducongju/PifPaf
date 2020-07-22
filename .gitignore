@@ -1,10 +1,7 @@
-# compat
-pifpaf
-
 # system
 .DS_Store
-.gitattributes
 .vscode
+*.so
 
 # Python
 build/
@@ -18,9 +15,20 @@ dist/
 openpifpaf/functional.cpython-*
 openpifpaf/functional.html
 
+# guide
+guide/_build/
+guide/coco/*.predictions.png
+guide/coco/*.predictions.json
+guide/logo.png
+guide/favicon.png
+guide/profile_decoder.1.json
+guide/profile_decoder.prof
+guide/profile_decoder_flame.svg
+
 # data
-docs/*
-data*/
+data-*/
+data_*/
+docs-private/
 data-mscoco
 *debug.png
 *.pl
@@ -29,7 +37,6 @@ data-mscoco
 *.pkl
 *.pkl-*
 *.pkl.*
-*.json
 *.log
 *.zip
 outputs/

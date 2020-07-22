@@ -10,11 +10,7 @@ try:
 except ImportError:
     numpy = None
 
-
-# extract version from __init__.py
-with open('openpifpaf/__init__.py', 'r') as f:
-    VERSION_LINE = [l for l in f if l.startswith('__version__')][0]
-    VERSION = VERSION_LINE.split('=')[1].strip()[1:-1]
+import versioneer
 
 
 class NumpyIncludePath(object):
@@ -40,14 +36,18 @@ else:
 
 setup(
     name='openpifpaf',
-    version=VERSION,
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     packages=[
         'openpifpaf',
+        'openpifpaf.datasets',
         'openpifpaf.decoder',
         'openpifpaf.decoder.generator',
         'openpifpaf.encoder',
         'openpifpaf.network',
+        'openpifpaf.show',
         'openpifpaf.transforms',
+        'openpifpaf.visualizer',
     ],
     license='GNU AGPLv3',
     description='PifPaf: Composite Fields for Human Pose Estimation',
@@ -59,30 +59,41 @@ setup(
     ext_modules=EXTENSIONS,
     zip_safe=False,
 
+    python_requires='>=3.6',
     install_requires=[
         'numpy>=1.16',
         'pysparkling',  # for log analysis
         'python-json-logger',
         'scipy',
-        'torch>=1.1.0',
-        'torchvision>=0.3',
-        'pillow<7',  # temporary compat requirement for torchvision
+        'torch>=1.3.1',
+        'torchvision>=0.4',
+        'pillow',
+        'dataclasses; python_version<"3.7"',
     ],
     extras_require={
+        'dev': [
+            'flameprof',
+            'jupyter-book>=0.7.0b',
+            'matplotlib',
+            'nbdime',
+            'nbstripout',
+        ],
         'onnx': [
             'onnx',
-            'onnx-simplifier',
+            'onnx-simplifier>=0.2.9',
         ],
         'test': [
+            'nbval',
+            'onnx',
+            'onnx-simplifier>=0.2.9',
             'pylint',
             'pytest',
             'opencv-python',
+            'thop',
         ],
         'train': [
-            'matplotlib',
-            'pycocotools',  # pre-install cython
-            'torch>=1.3.0',
-            'torchvision>=0.4',
+            'matplotlib',  # required by pycocotools
+            'pycocotools',  # pre-install cython (currently incompatible with numpy 1.18 or above)
         ],
     },
 )

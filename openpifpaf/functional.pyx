@@ -92,7 +92,13 @@ cpdef void scalar_square_add_gauss(float[:, :] field, float[:] x, float[:] y, fl
             deltax2 = (xx - cx)**2
             for yy in range(miny, maxy):
                 deltay2 = (yy - cy)**2
-                vv = cv * approx_exp(-0.5 * (deltax2 + deltay2) / csigma2)
+
+                if deltax2 < 0.25 and deltay2 < 0.25:
+                    # this is the closest pixel
+                    vv = cv
+                else:
+                    vv = cv * approx_exp(-0.5 * (deltax2 + deltay2) / csigma2)
+
                 field[yy, xx] += vv
 
 
@@ -104,6 +110,7 @@ cpdef void scalar_square_add_gauss_with_max(float[:, :] field, float[:] x, float
     cdef float vv, deltax2, deltay2
     cdef float cv, cx, cy, csigma, csigma2
     cdef long minx, miny, maxx, maxy
+    cdef float truncate2 = truncate * truncate
 
     for i in range(x.shape[0]):
         csigma = sigma[i]
@@ -113,14 +120,23 @@ cpdef void scalar_square_add_gauss_with_max(float[:, :] field, float[:] x, float
         cv = v[i]
 
         minx = (<long>clip(cx - truncate * csigma, 0, field.shape[1] - 1))
-        maxx = (<long>clip(cx + truncate * csigma, minx + 1, field.shape[1]))
+        maxx = (<long>clip(cx + truncate * csigma + 1, minx + 1, field.shape[1]))
         miny = (<long>clip(cy - truncate * csigma, 0, field.shape[0] - 1))
-        maxy = (<long>clip(cy + truncate * csigma, miny + 1, field.shape[0]))
+        maxy = (<long>clip(cy + truncate * csigma + 1, miny + 1, field.shape[0]))
         for xx in range(minx, maxx):
             deltax2 = (xx - cx)**2
             for yy in range(miny, maxy):
                 deltay2 = (yy - cy)**2
-                vv = cv * approx_exp(-0.5 * (deltax2 + deltay2) / csigma2)
+
+                if deltax2 + deltay2 > truncate2 * csigma2:
+                    continue
+
+                if deltax2 < 0.25 and deltay2 < 0.25:
+                    # this is the closest pixel
+                    vv = cv
+                else:
+                    vv = cv * approx_exp(-0.5 * (deltax2 + deltay2) / csigma2)
+
                 field[yy, xx] += vv
                 field[yy, xx] = min(max_value, field[yy, xx])
 
@@ -264,6 +280,14 @@ cpdef unsigned char scalar_nonzero_clipped(unsigned char[:, :] field, float x, f
 
 @cython.boundscheck(False)
 @cython.wraparound(False)
+cpdef unsigned char scalar_nonzero_clipped_with_reduction(unsigned char[:, :] field, float x, float y, float r):
+    x = clip(x / r, 0.0, field.shape[1] - 1)
+    y = clip(y / r, 0.0, field.shape[0] - 1)
+    return field[<Py_ssize_t>y, <Py_ssize_t>x]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
 def paf_center_b(float[:, :] paf_field, float x, float y, float sigma=1.0):
     result_np = np.empty_like(paf_field)
     cdef float[:, :] result = result_np
@@ -309,3 +333,95 @@ def paf_center(float[:, :] paf_field, float x, float y, float sigma):
         result_i += 1
 
     return result_np[:, :result_i]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+def caf_center_s(float[:, :] caf_field, float x, float y, float sigma):
+    result_np = np.empty_like(caf_field)
+    cdef float[:, :] result = result_np
+    cdef unsigned int result_i = 0
+    cdef Py_ssize_t i
+
+    for i in range(caf_field.shape[1]):
+        if caf_field[1, i] < x - sigma:
+            continue
+        if caf_field[1, i] > x + sigma:
+            continue
+        if caf_field[2, i] < y - sigma:
+            continue
+        if caf_field[2, i] > y + sigma:
+            continue
+
+        result[:, result_i] = caf_field[:, i]
+        result_i += 1
+
+    return result_np[:, :result_i]
+
+
+@cython.boundscheck(False)
+@cython.wraparound(False)
+@cython.cdivision(True)
+def grow_connection_blend(float[:, :] caf_field, float x, float y, float xy_scale, bint only_max=False):
+    """Blending the top two candidates with a weighted average.
+
+    Similar to the post processing step in
+    "BlazeFace: Sub-millisecond Neural Face Detection on Mobile GPUs".
+    """
+    cdef float sigma_filter = 2.0 * xy_scale  # 2.0 = 4 sigma
+    cdef float sigma2 = 0.25 * xy_scale * xy_scale
+    cdef float d2, v, score
+
+    cdef unsigned int score_1_i = 0
+    cdef unsigned int score_2_i = 0
+    cdef float score_1 = 0.0
+    cdef float score_2 = 0.0
+    cdef Py_ssize_t i
+    for i in range(caf_field.shape[1]):
+        if caf_field[1, i] < x - sigma_filter:
+            continue
+        if caf_field[1, i] > x + sigma_filter:
+            continue
+        if caf_field[2, i] < y - sigma_filter:
+            continue
+        if caf_field[2, i] > y + sigma_filter:
+            continue
+
+        # source distance
+        d2 = (caf_field[1, i] - x)**2 + (caf_field[2, i] - y)**2
+
+        # combined value and source distance
+        score = exp(-0.5 * d2 / sigma2) * caf_field[0, i]
+
+        if score > score_1:
+            score_2_i = score_1_i
+            score_2 = score_1
+            score_1_i = i
+            score_1 = score
+        elif score > score_2:
+            score_2_i = i
+            score_2 = score
+
+    if score_1 == 0.0:
+        return 0.0, 0.0, 0.0, 0.0
+
+    # only max
+    cdef float[:] entry_1 = caf_field[5:, score_1_i]
+    if only_max:
+        return entry_1[0], entry_1[1], entry_1[3], score_1
+
+    # blend
+    cdef float[:] entry_2 = caf_field[5:, score_2_i]
+    if score_2 < 0.01 or score_2 < 0.5 * score_1:
+        return entry_1[0], entry_1[1], entry_1[3], score_1 * 0.5
+
+    cdef float blend_d2 = (entry_1[0] - entry_2[0])**2 + (entry_1[1] - entry_2[1])**2
+    if blend_d2 > entry_1[3]**2 / 4.0:
+        return entry_1[0], entry_1[1], entry_1[3], score_1 * 0.5
+
+    return (
+        (score_1 * entry_1[0] + score_2 * entry_2[0]) / (score_1 + score_2),
+        (score_1 * entry_1[1] + score_2 * entry_2[1]) / (score_1 + score_2),
+        (score_1 * entry_1[3] + score_2 * entry_2[3]) / (score_1 + score_2),
+        0.5 * (score_1 + score_2),
+    )

@@ -6,12 +6,10 @@ import json
 import logging
 import os
 
-import numpy as np
 import PIL
 import torch
 
-from .network import nets
-from . import datasets, decoder, show, transforms
+from . import datasets, decoder, network, show, transforms, visualizer, __version__
 
 LOG = logging.getLogger(__name__)  # 创建以模块命名的logger文件
 
@@ -22,19 +20,24 @@ def cli():
         description=__doc__,  # 输出文件开头注释的内容
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,  # 自动添加默认的值的信息到每一个帮助信息的参数中
     )
-    nets.cli(parser)  # 导入网络配置
-    decoder.cli(parser, force_complete_pose=False, instance_threshold=0.1, seed_threshold=0.5)  # 导入解码配置
+
+    parser.add_argument('--version', action='version',
+                        version='OpenPifPaf {version}'.format(version=__version__))
+
+    network.cli(parser)  # 导入网络配置
+    decoder.cli(parser, force_complete_pose=False, instance_threshold=0.1, seed_threshold=0.5)  # # 导入解码配置
+    show.cli(parser)
+    visualizer.cli(parser)
     parser.add_argument('images', nargs='*',
                         help='input images')
     parser.add_argument('--glob',
                         help='glob expression for input images (for many images)')  # 利用通配符表述选择多张图片
-    parser.add_argument('-o', '--output-directory',
-                        help=('Output directory. When using this option, make '
-                              'sure input images have distinct file names.'))
     parser.add_argument('--show', default=False, action='store_true',
                         help='show image of output overlay')  # 是否在界面展示图片
-    parser.add_argument('--output-types', nargs='+', default=['skeleton', 'json'],
-                        help='what to output: skeleton, keypoints, json')  # 命令行用-，程序中用_
+    parser.add_argument('--image-output', default=None, nargs='?', const=True,
+                        help='image output file or directory')  # # 命令行用-，程序中用_
+    parser.add_argument('--json-output', default=None, nargs='?', const=True,
+                        help='json output file or directory')
     parser.add_argument('--batch-size', default=1, type=int,
                         help='processing batch size')
     parser.add_argument('--long-edge', default=None, type=int,
@@ -45,6 +48,7 @@ def cli():
                         help='disable CUDA')
     parser.add_argument('--line-width', default=6, type=int,
                         help='line width for skeleton')
+    parser.add_argument('--monocolor-connections', default=False, action='store_true')
     parser.add_argument('--figure-width', default=10.0, type=float,
                         help='figure width')
     parser.add_argument('--dpi-factor', default=1.0, type=float,
@@ -54,7 +58,12 @@ def cli():
                        help='only show warning messages or above')
     group.add_argument('--debug', default=False, action='store_true',
                        help='print debug messages')
+    group.add_argument('--debug-images', default=False, action='store_true',
+                       help='print debug messages and enable all debug images')
     args = parser.parse_args()
+
+    if args.debug_images:
+        args.debug = True
 
     log_level = logging.INFO
     if args.quiet:
@@ -64,6 +73,10 @@ def cli():
     logging.basicConfig()
     logging.getLogger('openpifpaf').setLevel(log_level)
     LOG.setLevel(log_level)
+
+    network.configure(args)
+    show.configure(args)
+    visualizer.configure(args)
 
     if args.loader_workers is None:
         args.loader_workers = args.batch_size
@@ -80,42 +93,68 @@ def cli():
     if not args.disable_cuda and torch.cuda.is_available():
         args.device = torch.device('cuda')
         args.pin_memory = True
+    LOG.debug('neural network device: %s', args.device)
 
     return args
 
 
-def bbox_from_keypoints(kps):  # 通过keypoints得到bbox
-    m = kps[:, 2] > 0
-    if not np.any(m):
-        return [0, 0, 0, 0]
+def processor_factory(args):
+    # load model
+    model_cpu, _ = network.factory_from_args(args)
+    model = model_cpu.to(args.device)
+    if not args.disable_cuda and torch.cuda.device_count() > 1:
+        LOG.info('Using multiple GPUs: %d', torch.cuda.device_count())
+        model = torch.nn.DataParallel(model)
+        model.base_net = model_cpu.base_net
+        model.head_nets = model_cpu.head_nets
+    processor = decoder.factory_from_args(args, model)
+    return processor, model
 
-    x, y = np.min(kps[:, 0][m]), np.min(kps[:, 1][m])
-    w, h = np.max(kps[:, 0][m]) - x, np.max(kps[:, 1][m]) - y
-    return [x, y, w, h]
+
+def preprocess_factory(args):
+    preprocess = [transforms.NormalizeAnnotations()]
+    if args.long_edge:
+        preprocess.append(transforms.RescaleAbsolute(args.long_edge))
+    if args.batch_size > 1:
+        assert args.long_edge, '--long-edge must be provided for batch size > 1'
+        preprocess.append(transforms.CenterPad(args.long_edge))
+    else:
+        preprocess.append(transforms.CenterPadTight(16))
+    return transforms.Compose(preprocess + [transforms.EVAL_TRANSFORM])
+
+
+def out_name(arg, in_name, default_extension):
+    """Determine an output name from args, input name and extension.
+
+    arg can be:
+    - none: return none (e.g. show image but don't store it)
+    - True: activate this output and determine a default name
+    - string:
+        - not a directory: use this as the output file name
+        - is a directory: use directory name and input name to form an output
+    """
+    if arg is None:
+        return None
+
+    if arg is True:
+        return in_name + default_extension
+
+    if os.path.isdir(arg):
+        return os.path.join(
+            arg,
+            os.path.basename(in_name)
+        ) + default_extension
+
+    return arg
 
 
 def main():
     args = cli()
 
-    # load model
-    model_cpu, _ = nets.factory_from_args(args)
-    model = model_cpu.to(args.device)
-    if not args.disable_cuda and torch.cuda.device_count() > 1:
-        LOG.info('Using multiple GPUs: %d', torch.cuda.device_count())
-        model = torch.nn.DataParallel(model)
-        model.head_names = model_cpu.head_names
-        model.head_strides = model_cpu.head_strides
-    processor = decoder.factory_from_args(args, model, args.device)
+    processor, model = processor_factory(args)
+    preprocess = preprocess_factory(args)
 
     # data
-    preprocess = None
-    if args.long_edge:
-        preprocess = transforms.Compose([
-            transforms.NormalizeAnnotations(),
-            transforms.RescaleAbsolute(args.long_edge),
-            transforms.CenterPad(args.long_edge),
-            transforms.EVAL_TRANSFORM,
-        ])
     data = datasets.ImageList(args.images, preprocess=preprocess)
     data_loader = torch.utils.data.DataLoader(
         data, batch_size=args.batch_size, shuffle=False,
@@ -124,68 +163,45 @@ def main():
 
     # visualizers
     keypoint_painter = show.KeypointPainter(
-        show_box=args.debug,
-        show_joint_scale=args.debug,
-    )
-    skeleton_painter = show.KeypointPainter(
-        color_connections=True,
-        markersize=args.line_width - 5,
+        color_connections=not args.monocolor_connections,
         linewidth=args.line_width,
-        show_box=args.debug,
-        show_joint_scale=args.debug,
     )
+    annotation_painter = show.AnnotationPainter(keypoint_painter=keypoint_painter)
 
     for batch_i, (image_tensors_batch, _, meta_batch) in enumerate(data_loader):
-        fields_batch = processor.fields(image_tensors_batch)
-        pred_batch = processor.annotations_batch(fields_batch, debug_images=image_tensors_batch)
+        pred_batch = processor.batch(model, image_tensors_batch, device=args.device)
 
         # unbatch
         for pred, meta in zip(pred_batch, meta_batch):
-            if args.output_directory is None:
-                output_path = meta['file_name']
-            else:
-                file_name = os.path.basename(meta['file_name'])
-                output_path = os.path.join(args.output_directory, file_name)
-            LOG.info('batch %d: %s to %s', batch_i, meta['file_name'], output_path)
+            LOG.info('batch %d: %s', batch_i, meta['file_name'])
 
             # load the original image if necessary
             cpu_image = None
-            if args.debug or \
-               'keypoints' in args.output_types or \
-               'skeleton' in args.output_types:
+            if args.debug or args.show or args.image_output is not None:
                 with open(meta['file_name'], 'rb') as f:
                     cpu_image = PIL.Image.open(f).convert('RGB')
 
-            processor.set_cpu_image(cpu_image, None)
+            visualizer.BaseVisualizer.image(cpu_image)
             if preprocess is not None:
                 pred = preprocess.annotations_inverse(pred, meta)
 
-            if 'json' in args.output_types:
-                with open(output_path + '.pifpaf.json', 'w') as f:
-                    json.dump([
-                        {
-                            'keypoints': np.around(ann.data, 1).reshape(-1).tolist(),
-                            'bbox': np.around(bbox_from_keypoints(ann.data), 1).tolist(),
-                            'score': round(ann.score(), 3),
-                        }
-                        for ann in pred
-                    ], f)
+            if args.json_output is not None:
+                json_out_name = out_name(
+                    args.json_output, meta['file_name'], '.predictions.json')
+                LOG.debug('json output = %s', json_out_name)
+                with open(json_out_name, 'w') as f:
+                    json.dump([ann.json_data() for ann in pred], f)
 
-            if 'keypoints' in args.output_types:
+            if args.show or args.image_output is not None:
+                image_out_name = out_name(
+                    args.image_output, meta['file_name'], '.predictions.png')
+                LOG.debug('image output = %s', image_out_name)
                 with show.image_canvas(cpu_image,
-                                       output_path + '.keypoints.png',
+                                       image_out_name,
                                        show=args.show,
                                        fig_width=args.figure_width,
                                        dpi_factor=args.dpi_factor) as ax:
-                    keypoint_painter.annotations(ax, pred)
-
-            if 'skeleton' in args.output_types:
-                with show.image_canvas(cpu_image,
-                                       output_path + '.skeleton.png',
-                                       show=args.show,
-                                       fig_width=args.figure_width,
-                                       dpi_factor=args.dpi_factor) as ax:
-                    skeleton_painter.annotations(ax, pred)
+                    annotation_painter.annotations(ax, pred)
 
 
 if __name__ == '__main__':

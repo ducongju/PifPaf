@@ -1,7 +1,10 @@
 """An open implementation of PifPaf."""
 
-__version__ = '0.10.1'
+from ._version import get_versions
+__version__ = get_versions()['version']
+del get_versions
 
+from .annotation import Annotation, AnnotationDet
 from . import datasets
 from . import decoder
 from . import network

@@ -21,13 +21,25 @@ except ImportError:
 
 def count(checkpoint):
     dummy_input = torch.randn(1, 3, 641, 641)
-    model, _ = openpifpaf.network.nets.factory(checkpoint=checkpoint)
+    model, _ = openpifpaf.network.factory(checkpoint=checkpoint)
     return thop.profile(model, inputs=(dummy_input, ))
 
 
+class CustomFormatter(argparse.ArgumentDefaultsHelpFormatter,
+                      argparse.RawDescriptionHelpFormatter):
+    pass
+
+
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--checkpoint', default='resnet50')
+    parser = argparse.ArgumentParser(
+        prog='python3 -m openpifpaf.count_ops',
+        description=__doc__,
+        formatter_class=CustomFormatter,
+    )
+    parser.add_argument('--version', action='version',
+                        version='OpenPifPaf {version}'.format(version=openpifpaf.__version__))
+
+    parser.add_argument('--checkpoint')
     args = parser.parse_args()
 
     gmacs, params = count(args.checkpoint)
